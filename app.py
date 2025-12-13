@@ -1,7 +1,6 @@
 from flask_socketio import SocketIO, emit, join_room
 from flask import Flask, render_template, request, redirect, url_for, session
-from crypto.symmetric import aes_encrypt, aes_decrypt, des_encrypt, des_decrypt
-from crypto.asymmetric import rsa_encrypt, rsa_decrypt
+from crypto.factory import get_cipher
 from db import SessionLocal, Message
 
 app = Flask(__name__)
@@ -9,65 +8,108 @@ app.config['SECRET_KEY'] = 'super-secret-key'
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-
 USERS = {
-    "admin": "1234",
-    "bekir": "12345"
+    "admin": {"password": "1234", "role": "admin"},
+    "bekir": {"password": "12345", "role": "user"}
 }
 
+session_aes_keys = {}
 
 
 @app.route("/")
 def index():
     if "username" not in session:
         return redirect(url_for("login"))
-    return render_template("index.html", username=session["username"])
+    return render_template("index.html", username=session["username"], role=session.get("role", "user"))
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    error = None
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-
-        if username in USERS and USERS[username] == password:
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        user = USERS.get(username)
+        if user and user["password"] == password:
             session["username"] = username
+            session["role"] = user["role"]
             return redirect(url_for("index"))
         else:
-            return render_template("login.html", error="Hatalı kullanıcı adı veya şifre.")
-    return render_template("login.html")
+            error = "Hatalı kullanıcı adı veya şifre."
+    return render_template("login.html", error=error)
 
 
 @app.route("/logout")
 def logout():
     session.pop("username", None)
+    session.pop("role", None)
     return redirect(url_for("login"))
 
+
+@app.route("/admin")
+def admin_dashboard():
+    if session.get("role") != "admin":
+        return redirect(url_for("index"))
+    db = SessionLocal()
+    messages = db.query(Message).order_by(Message.timestamp.desc()).limit(50).all()
+    db.close()
+    return render_template("admin.html", username=session["username"], role=session["role"], messages=messages)
+
+
+@app.post("/admin/delete/<int:msg_id>")
+def admin_delete_message(msg_id):
+    if session.get("role") != "admin":
+        return redirect(url_for("index"))
+    db = SessionLocal()
+    msg = db.query(Message).filter(Message.id == msg_id).first()
+    if msg:
+        db.delete(msg)
+        db.commit()
+    db.close()
+    return redirect(url_for("admin_dashboard"))
+
+
+@app.route("/api/public-key")
+def get_public_key():
+    rsa = get_cipher("RSA")
+    pem = rsa.get_public_key_pem()
+    return {"public_key": pem}
+
+
+@app.route("/api/set-session-key", methods=["POST"])
+def set_session_key():
+    if "username" not in session:
+        return {"success": False, "error": "Giriş yapılmamış."}, 401
+    data = request.get_json() or {}
+    enc_key = data.get("encrypted_key")
+    if not enc_key:
+        return {"success": False, "error": "encrypted_key alanı boş."}, 400
+    username = session["username"]
+    try:
+        rsa = get_cipher("RSA")
+        aes_key = rsa.decrypt(enc_key)
+        session_aes_keys[username] = aes_key
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}, 400
 
 
 @socketio.on("connect")
 def handle_connect():
-    print(">>> Yeni bir client bağlandı", flush=True)
+    pass
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
-    print(">>> Bir client bağlantıyı kesti", flush=True)
+    pass
 
 
 @socketio.on("join")
 def handle_join(data):
-    print(">>> join event geldi:", data, flush=True)
-
     username = data.get("username")
     room = data.get("room")
-
     join_room(room)
-
-    emit("system_message", {
-        "message": f"{username} odaya katıldı.",
-        "room": room
-    }, room=room)
+    emit("system_message", {"message": f"{username} odaya katıldı.", "room": room}, room=room)
 
     db = SessionLocal()
     history = (
@@ -92,45 +134,27 @@ def handle_join(data):
     emit("history", history_data, to=request.sid)
 
 
-
 @socketio.on("chat_message")
 def handle_chat_message(data):
-
-    print(">>> chat_message event (yalnız meta):",
-          {"username": data.get("username"), "room": data.get("room"), "algo": data.get("algo")},
-          flush=True)
-
     msg = data["message"]
     username = data["username"]
     room = data["room"]
     algo = data.get("algo", "AES")
-    key = data.get("key")
+    key = data.get("key", "")
 
+    if algo == "AES" and (not key or key.strip() == ""):
+        key = session_aes_keys.get(username)
 
     try:
-        if algo == "AES":
-            ciphertext = aes_encrypt(msg, key)
-        elif algo == "DES":
-            ciphertext = des_encrypt(msg, key)
-        elif algo == "RSA":
-            ciphertext = rsa_encrypt(msg)
+        cipher = get_cipher(algo)
+        if algo == "HILL":
+            size = int(data.get("hillSize", 2))
+            ciphertext = cipher.encrypt(msg, key, size)
         else:
-            emit(
-                "system_message",
-                {"message": f"Desteklenmeyen algoritma: {algo}"},
-                room=room
-            )
-            return
-
+            ciphertext = cipher.encrypt(msg, key)
     except Exception as e:
-        print(">>> Şifreleme hatası:", e, flush=True)
-        emit(
-            "system_message",
-            {"message": f"Şifreleme hatası: {str(e)}"},
-            room=room
-        )
+        emit("system_message", {"message": f"Şifreleme hatası: {str(e)}"}, room=room)
         return
-
 
     try:
         db = SessionLocal()
@@ -144,9 +168,8 @@ def handle_chat_message(data):
         db.add(msg_record)
         db.commit()
         db.close()
-    except Exception as e:
-        print(">>> DB kayıt hatası:", e, flush=True)
-
+    except Exception:
+        pass
 
     emit(
         "chat_message",
@@ -160,29 +183,26 @@ def handle_chat_message(data):
     )
 
 
-
 @socketio.on("decrypt_message")
 def handle_decrypt_message(data):
-    print(">>> decrypt_message event:", data, flush=True)
-
-    cipher = data.get("ciphertext")
+    cipher_text = data.get("ciphertext")
     algo = data.get("algo")
     key = data.get("key", "")
 
-    if not cipher:
+    if not cipher_text:
         emit("decrypt_result", {"success": False, "error": "Cipher boş."})
         return
 
+    if algo == "AES" and (not key or key.strip() == "") and "username" in session:
+        key = session_aes_keys.get(session["username"], "")
+
     try:
-        if algo == "AES":
-            plaintext = aes_decrypt(cipher, key)
-        elif algo == "DES":
-            plaintext = des_decrypt(cipher, key)
-        elif algo == "RSA":
-            plaintext = rsa_decrypt(cipher)
+        cipher = get_cipher(algo)
+        if algo == "HILL":
+            size = int(data.get("hillSize", 2))
+            plaintext = cipher.decrypt(cipher_text, key, size)
         else:
-            emit("decrypt_result", {"success": False, "error": "Desteklenmeyen algo."})
-            return
+            plaintext = cipher.decrypt(cipher_text, key)
     except Exception as e:
         emit("decrypt_result", {"success": False, "error": f"Hata: {e}"})
         return
@@ -190,7 +210,5 @@ def handle_decrypt_message(data):
     emit("decrypt_result", {"success": True, "plaintext": plaintext})
 
 
-
 if __name__ == "__main__":
-    print(">>> Sunucu başlıyor...", flush=True)
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True)

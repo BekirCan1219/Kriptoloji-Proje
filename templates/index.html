@@ -4,16 +4,13 @@
     <meta charset="UTF-8">
     <title>Şifreli Mesajlaşma | Kripto Chat</title>
 
-
     <style>
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         body {
             margin: 0;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #0f172a; /* koyu lacivert */
+            background: #0f172a;
             color: #e5e7eb;
         }
 
@@ -41,6 +38,43 @@
         header span {
             font-size: 12px;
             opacity: 0.9;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .user-chip {
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(15,23,42,0.2);
+            border: 1px solid rgba(15,23,42,0.4);
+        }
+
+        .badge-admin {
+            margin-left: 4px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            background: rgba(248,250,252,0.08);
+            border: 1px solid rgba(251,191,36,0.7);
+            color: #facc15;
+            font-size: 10px;
+        }
+
+        .top-link {
+            color: #e5e7eb;
+            text-decoration: none;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(226,232,240,0.3);
+            font-size: 11px;
+        }
+
+        .top-link:hover {
+            background: rgba(15,23,42,0.2);
         }
 
         .main-layout {
@@ -77,11 +111,6 @@
             margin-bottom: 8px;
         }
 
-        .row label {
-            font-size: 12px;
-            color: #9ca3af;
-        }
-
         input, select, textarea, button {
             font-family: inherit;
             font-size: 14px;
@@ -114,13 +143,8 @@
             white-space: nowrap;
         }
 
-        button:hover {
-            background: #2563eb;
-        }
-
-        button:active {
-            transform: scale(0.97);
-        }
+        button:hover { background: #2563eb; }
+        button:active { transform: scale(0.97); }
 
         button.secondary {
             background: #4b5563;
@@ -130,7 +154,6 @@
             background: #374151;
         }
 
-        /* Chat alanı */
         #messages {
             list-style: none;
             margin: 8px 0 10px;
@@ -148,30 +171,6 @@
             word-break: break-all;
         }
 
-        #messages li span.tag {
-            font-size: 11px;
-            border-radius: 999px;
-            padding: 2px 6px;
-            margin-right: 6px;
-            color: #0f172a;
-            background: #a5b4fc;
-        }
-
-        #messages li span.user {
-            font-weight: 600;
-            margin-right: 4px;
-        }
-
-        #messages li.system {
-            font-style: italic;
-            color: #9ca3af;
-        }
-
-        #messages li.history {
-            opacity: 0.7;
-        }
-
-        /* Mesaj giriş alanı */
         .message-input-row {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -179,7 +178,10 @@
             margin-top: 8px;
         }
 
-        /* Sağ panel - decrypt */
+        #hillOptions {
+            margin-top: 4px;
+        }
+
         textarea#cipherInput {
             resize: vertical;
             min-height: 90px;
@@ -194,6 +196,8 @@
             word-break: break-word;
         }
 
+        #decryptResult.error { color: #f87171; }
+
         .label-small {
             font-size: 12px;
             color: #9ca3af;
@@ -206,96 +210,160 @@
                 grid-template-columns: 1fr;
             }
         }
-
     </style>
 </head>
+
 <body>
 <div class="app">
-    <header>
-        <div>
-            <h1>🔐 Kripto Chat</h1>
-            <span>Socket.IO + AES / DES / RSA şifreli mesajlaşma</span>
+
+<header>
+    <div>
+        <h1>🔐 Kripto Chat</h1>
+        <span>Socket.IO + 12+ şifreleme yöntemi</span>
+    </div>
+
+    <div class="header-right">
+        <span class="user-chip">
+            {{ username }}
+            {% if role == 'admin' %}
+                <span class="badge-admin">Admin</span>
+            {% endif %}
+        </span>
+
+        {% if role == 'admin' %}
+            <a href="{{ url_for('admin_dashboard') }}" class="top-link">Admin Paneli</a>
+        {% endif %}
+
+        <a href="{{ url_for('logout') }}" class="top-link">Çıkış</a>
+    </div>
+</header>
+
+<main class="main-layout">
+
+<!-- SOL PANEL -->
+<section class="card">
+    <h2>Oda & Şifreleme</h2>
+
+    <div class="row">
+        <div style="flex: 1;">
+            <label class="label-small">Kullanıcı adı</label>
+            <input id="usernameInput" type="text" value="{{ username }}" readonly>
         </div>
-    </header>
 
-    <main class="main-layout">
-        <section class="card">
-            <h2>Oda & Şifreleme</h2>
-            <p class="sub">Önce kullanıcı adı ve oda adını gir, sonra algoritma ve anahtarını seç.</p>
+        <div style="flex: 1;">
+            <label class="label-small">Oda adı</label>
+            <input id="roomInput" type="text" placeholder="örn: oda1">
+        </div>
 
-            <div class="row">
-                <div style="flex: 1;">
-                    <label class="label-small" for="usernameInput">Kullanıcı adı</label>
-                    <input id="usernameInput" type="text" placeholder="örn: bekir">
-                </div>
-                <div style="flex: 1;">
-                    <label class="label-small" for="roomInput">Oda adı</label>
-                    <input id="roomInput" type="text" placeholder="örn: oda1">
-                </div>
-                <div style="align-self: flex-end;">
-                    <button id="joinBtn">Odaya Katıl</button>
-                </div>
-            </div>
+        <div style="align-self: flex-end;">
+            <button id="joinBtn">Odaya Katıl</button>
+        </div>
+    </div>
 
-            <div class="row">
-                <div style="flex: 0.9;">
-                    <label class="label-small" for="algoSelect">Algoritma</label>
-                    <select id="algoSelect">
-                        <option value="AES">AES-128 CBC</option>
-                        <option value="DES">DES CBC</option>
-                        <option value="RSA">RSA (sunucu anahtarı)</option>
-                    </select>
-                </div>
-                <div style="flex: 1.1;">
-                    <label class="label-small" for="keyInput">Anahtar (AES=16, DES=8)</label>
-                    <input id="keyInput" type="text" placeholder="örn: 16 karakterlik key">
-                </div>
-            </div>
+    <div class="row">
+        <div style="flex: 0.9;">
+            <label class="label-small">Algoritma</label>
+            <select id="algoSelect">
+                <option value="AES">AES-128 CBC</option>
+                <option value="DES">DES CBC</option>
+                <option value="3DES">3DES</option>
+                <option value="BLOWFISH">Blowfish</option>
+                <option value="RC2">RC2</option>
+                <option value="RC5">RC5</option>
+                <option value="RSA">RSA</option>
+                <option value="MANUAL_AES">Manual AES</option>
+                <option value="CAESAR">Caesar</option>
+                <option value="AFFINE">Affine</option>
+                <option value="VIGENERE">Vigenere</option>
+                <option value="HILL">Hill Cipher</option>
+                <option value="ELGAMAL">El-Gamal</option>
+                <option value="RABIN">Rabin</option>
+                <option value="KNAPSACK">Knapsack</option>
+                <option value="DSA">DSA (İmza)</option>
+                <option value="DH">Diffie-Hellman (DH)</option>
+                <option value="ECC">Eliptik Eğri (ECC)</option>
 
-            <ul id="messages"></ul>
+            </select>
+        </div>
 
+        <div style="flex: 1.1;">
+            <label class="label-small" id="keyLabel">Anahtar</label>
+            <input id="keyInput" type="text" placeholder="">
+            <span class="label-small" id="keyHint"></span>
+        </div>
+    </div>
 
-            <div class="message-input-row">
-                <input id="messageInput" type="text" placeholder="Göndermek istediğin mesaj (UI'da plaintext gösterilmeyecek)">
-                <button id="sendBtn">Gönder</button>
-            </div>
-        </section>
+    <div id="hillOptions" style="display:none;">
+        <label class="label-small">Hill Matris Boyutu</label>
+        <select id="hillSize">
+            <option value="2">2x2</option>
+            <option value="3">3x3</option>
+            <option value="4">4x4</option>
+        </select>
+    </div>
 
+    <ul id="messages"></ul>
 
-        <section class="card">
-            <h2>Şifre Çözme Paneli</h2>
-            <p class="sub">
-                Soldaki listeden bir ciphertext kopyala, buraya yapıştır. Doğru key ile çözümle,
-                plaintext <strong>yalnızca burada</strong> görünecek.
-            </p>
+    <div class="message-input-row">
+        <input id="messageInput" type="text" placeholder="Mesaj yaz...">
+        <button id="sendBtn">Gönder</button>
+    </div>
+</section>
 
-            <div>
-                <label class="label-small" for="cipherInput">Şifreli metin (Base64 ciphertext)</label>
-                <textarea id="cipherInput" placeholder="Chat'teki şifreli mesajı buraya yapıştır..."></textarea>
-            </div>
+<!-- SAĞ PANEL -->
+<section class="card">
+    <h2>Şifre Çözme</h2>
 
-            <div class="row" style="margin-top: 8px;">
-                <div style="flex: 1;">
-                    <label class="label-small" for="decKeyInput">Anahtar (AES=16, DES=8, RSA için boş)</label>
-                    <input id="decKeyInput" type="text" placeholder="Çözmek için gerekli key">
-                </div>
-                <div style="align-self: flex-end;">
-                    <button id="decryptBtn" class="secondary">Çöz</button>
-                </div>
-            </div>
+    <div class="row">
+        <div style="flex: 1;">
+            <label class="label-small">Algoritma</label>
+            <select id="decAlgoSelect">
+                <option value="AES">AES-128 CBC</option>
+                <option value="DES">DES CBC</option>
+                <option value="3DES">3DES</option>
+                <option value="BLOWFISH">Blowfish</option>
+                <option value="RC2">RC2</option>
+                <option value="RC5">RC5</option>
+                <option value="RSA">RSA</option>
+                <option value="MANUAL_AES">Manual AES</option>
+                <option value="CAESAR">Caesar</option>
+                <option value="AFFINE">Affine</option>
+                <option value="VIGENERE">Vigenere</option>
+                <option value="HILL">Hill Cipher</option>
+                <option value="ELGAMAL">El-Gamal</option>
+                <option value="RABIN">Rabin</option>
+                <option value="KNAPSACK">Knapsack</option>
+                <option value="DSA">DSA (İmza)</option>
+                <option value="DH">Diffie-Hellman (DH)</option>
+                <option value="ECC">Eliptik Eğri (ECC)</option>
 
-            <div style="margin-top: 8px;">
-                <span class="label-small">Çözülmüş Metin</span>
-                <span id="decryptResult"></span>
-            </div>
-        </section>
-    </main>
+            </select>
+        </div>
+    </div>
+
+    <label class="label-small">Şifreli metin</label>
+    <textarea id="cipherInput" placeholder="Şifreli metni yapıştır..."></textarea>
+
+    <div class="row">
+        <div style="flex: 1;">
+            <label class="label-small" id="decKeyLabel">Anahtar</label>
+            <input id="decKeyInput" type="text" placeholder="">
+            <span class="label-small" id="decKeyHint"></span>
+        </div>
+
+        <div style="align-self: flex-end;">
+            <button id="decryptBtn" class="secondary">Çöz</button>
+        </div>
+    </div>
+
+    <span class="label-small">Çözülmüş Metin</span>
+    <span id="decryptResult"></span>
+</section>
+
+</main>
 </div>
 
-
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-
-
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
