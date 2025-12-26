@@ -54,6 +54,14 @@
             border: 1px solid rgba(15,23,42,0.4);
         }
 
+        /* Oda kullanıcı chip'i (B seçeneği) */
+        #roomUsersChip {
+            display: none; /* JS açacak */
+            background: rgba(34,197,94,0.15);
+            border: 1px solid rgba(34,197,94,0.6);
+            color: #bbf7d0;
+        }
+
         .badge-admin {
             margin-left: 4px;
             padding: 1px 6px;
@@ -154,6 +162,9 @@
             background: #374151;
         }
 
+        /* ------------------------------
+           Messages area (wire-friendly)
+        ------------------------------ */
         #messages {
             list-style: none;
             margin: 8px 0 10px;
@@ -167,8 +178,66 @@
 
         #messages li {
             font-size: 13px;
+            margin-bottom: 10px;
+            word-break: break-word;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: rgba(2,6,23,0.55);
+            border: 1px solid rgba(148,163,184,0.15);
+        }
+
+        /* main.js li içine .meta / .cipher / .ct / butonlar ekliyor */
+        #messages li .meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
             margin-bottom: 6px;
-            word-break: break-all;
+        }
+
+        #messages li .muted {
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        #messages li .cipher {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        #messages li .cipher .label {
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        #messages li .cipher code.ct {
+            padding: 6px 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(148,163,184,0.18);
+            background: rgba(15,23,42,0.35);
+            max-width: 100%;
+            overflow-wrap: anywhere;
+        }
+
+        #messages li .cipher button {
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        #messages li .cipher button.copyBtn {
+            background: #475569;
+        }
+        #messages li .cipher button.copyBtn:hover {
+            background: #334155;
+        }
+
+        #messages li .cipher button.useDecryptBtn {
+            background: #0ea5e9;
+        }
+        #messages li .cipher button.useDecryptBtn:hover {
+            background: #0284c7;
         }
 
         .message-input-row {
@@ -178,8 +247,13 @@
             margin-top: 8px;
         }
 
-        #hillOptions {
+        /* Hill seçenek kutuları */
+        #hillOptions, #decHillOptions {
             margin-top: 4px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px dashed rgba(148,163,184,0.25);
+            background: rgba(15,23,42,0.25);
         }
 
         textarea#cipherInput {
@@ -228,6 +302,11 @@
             {% if role == 'admin' %}
                 <span class="badge-admin">Admin</span>
             {% endif %}
+        </span>
+
+        <!-- B) Header'da oda kullanıcıları -->
+        <span id="roomUsersChip" class="user-chip">
+            Odada: <span id="roomUsersText"></span>
         </span>
 
         {% if role == 'admin' %}
@@ -282,7 +361,6 @@
                 <option value="DSA">DSA (İmza)</option>
                 <option value="DH">Diffie-Hellman (DH)</option>
                 <option value="ECC">Eliptik Eğri (ECC)</option>
-
             </select>
         </div>
 
@@ -336,13 +414,28 @@
                 <option value="DSA">DSA (İmza)</option>
                 <option value="DH">Diffie-Hellman (DH)</option>
                 <option value="ECC">Eliptik Eğri (ECC)</option>
-
             </select>
         </div>
     </div>
 
+    <!-- Decrypt Hill seçenekleri -->
+    <div id="decHillOptions" style="display:none;">
+        <label class="label-small">Hill Matris Boyutu (Decrypt)</label>
+        <select id="decHillSize">
+            <option value="2">2x2</option>
+            <option value="3">3x3</option>
+            <option value="4">4x4</option>
+        </select>
+    </div>
+
     <label class="label-small">Şifreli metin</label>
-    <textarea id="cipherInput" placeholder="Şifreli metni yapıştır..."></textarea>
+    <textarea id="cipherInput" placeholder='Şifreli metni yapıştır...
+
+Örnek wire JSON:
+{"encoding":"b64","data":"..."}
+
+DB formatı:
+b64:...  veya  str:...'></textarea>
 
     <div class="row">
         <div style="flex: 1;">

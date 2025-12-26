@@ -6,7 +6,7 @@ from Crypto.Util import number
 from Crypto.Random import get_random_bytes
 
 
-# Sabit büyük bir asal (örnek amaçlı, gerçek hayatta daha da büyük seçilir)
+
 P = int(
     "208351617316091241234326746312124448251235562226470491514186331217050270460481"
 )
@@ -27,12 +27,7 @@ class ElGamalCipher:
     name = "ELGAMAL"
 
     def encrypt(self, plaintext: str, key: str) -> str:
-        """
-        El-Gamal ile şifreleme.
-        plaintext: normal metin (str)
-        key: kullanıcı anahtarı (str)
-        return: base64(JSON(c1, c2)) şeklinde string
-        """
+
         if not plaintext:
             return ""
 
@@ -49,14 +44,12 @@ class ElGamalCipher:
         x = _derive_private_key(key)
         y = pow(G, x, P)  # public key
 
-        # Rastgele k seç
         k = number.getRandomRange(1, P - 1)
 
-        # c1 = g^k mod p
         c1 = pow(G, k, P)
-        # s = y^k mod p
+
         s = pow(y, k, P)
-        # c2 = m * s mod p
+
         c2 = (m * s) % P
 
         cipher_obj = {"c1": str(c1), "c2": str(c2)}
@@ -65,12 +58,7 @@ class ElGamalCipher:
         return cipher_b64
 
     def decrypt(self, ciphertext: str, key: str) -> str:
-        """
-        El-Gamal ile çözme.
-        ciphertext: encrypt'ten dönen base64(JSON(c1,c2)) string'i
-        key: kullanıcı anahtarı (str)
-        return: çözümlenmiş plaintext (str)
-        """
+
         if not ciphertext:
             return ""
 
@@ -92,7 +80,6 @@ class ElGamalCipher:
         # m = c2 * s^-1 mod p
         m = (c2 * s_inv) % P
 
-        # integer -> bytes -> str
         m_len = (m.bit_length() + 7) // 8
         m_bytes = m.to_bytes(m_len, "big")
         try:

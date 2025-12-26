@@ -3,6 +3,8 @@ from flask import Flask, render_template, request, redirect, url_for, session
 from crypto.factory import get_cipher
 from db import SessionLocal, Message
 
+import base64
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'super-secret-key'
 
@@ -14,6 +16,86 @@ USERS = {
 }
 
 session_aes_keys = {}
+
+# -----------------------------
+# Active room user tracking
+# -----------------------------
+room_users = {}   # { room: set(usernames) }
+sid_map = {}      # { sid: {"room": room, "username": username} }
+
+
+def _emit_room_users(room: str):
+    users = sorted(list(room_users.get(room, set())))
+    emit("room_users", {"room": room, "users": users}, room=room)
+
+
+# ----------------------------------------------------
+# Wire / DB normalize helpers
+# ----------------------------------------------------
+def _wire_from_ciphertext(ct):
+    """
+    ct bytes ise -> {"encoding":"b64","data":"..."}
+    ct str ise   -> {"encoding":"str","data":"..."}
+    ayrıca DB formatı: "b64:..." / "str:..." desteklenir
+    """
+    if ct is None:
+        return {"encoding": "str", "data": ""}
+
+    if isinstance(ct, (bytes, bytearray)):
+        b64 = base64.b64encode(bytes(ct)).decode("utf-8")
+        return {"encoding": "b64", "data": b64}
+
+    s = str(ct)
+
+    if s.startswith("b64:"):
+        return {"encoding": "b64", "data": s[4:]}
+    if s.startswith("str:"):
+        return {"encoding": "str", "data": s[4:]}
+
+    return {"encoding": "str", "data": s}
+
+
+def _db_string_from_ciphertext(ct):
+    """
+    DB'ye her zaman string kaydet:
+      bytes -> "b64:<...>"
+      str   -> "str:<...>"
+    """
+    w = _wire_from_ciphertext(ct)
+    if w["encoding"] == "b64":
+        return "b64:" + w["data"]
+    return "str:" + w["data"]
+
+
+def _ciphertext_from_wire(wire):
+    """
+    decrypt için wire objeyi geri çevir:
+      {"encoding":"b64","data":"..."} -> bytes
+      {"encoding":"str","data":"..."} -> str
+    ayrıca kullanıcı "b64:.." "str:.." yapıştırdıysa parse eder
+    """
+    if wire is None:
+        return ""
+
+    if isinstance(wire, dict):
+        enc = wire.get("encoding")
+        data = wire.get("data", "")
+        if enc == "b64":
+            try:
+                return base64.b64decode(data.encode("utf-8"))
+            except Exception:
+                return data
+        return data
+
+    s = str(wire)
+    if s.startswith("b64:"):
+        try:
+            return base64.b64decode(s[4:].encode("utf-8"))
+        except Exception:
+            return s[4:]
+    if s.startswith("str:"):
+        return s[4:]
+    return s
 
 
 @app.route("/")
@@ -101,16 +183,45 @@ def handle_connect():
 
 @socketio.on("disconnect")
 def handle_disconnect():
-    pass
+    # Kim, hangi odadaydı?
+    sid = request.sid
+    info = sid_map.pop(sid, None)
+    if not info:
+        return
+
+    room = info.get("room")
+    username = info.get("username")
+
+    if room:
+        if room in room_users:
+            room_users[room].discard(username)
+            if len(room_users[room]) == 0:
+                room_users.pop(room, None)
+
+        # odadakilere bilgi + güncel kullanıcı listesi
+        emit("system_message", {"message": f"{username} odadan ayrıldı.", "room": room}, room=room)
+        _emit_room_users(room)
 
 
 @socketio.on("join")
 def handle_join(data):
-    username = data.get("username")
-    room = data.get("room")
+    username = (data.get("username") or "").strip()
+    room = (data.get("room") or "").strip()
+
+    if not username or not room:
+        emit("system_message", {"message": "Username/Room boş olamaz.", "room": room or ""}, to=request.sid)
+        return
+
     join_room(room)
+
+    # aktif kullanıcı set'i
+    room_users.setdefault(room, set()).add(username)
+    sid_map[request.sid] = {"room": room, "username": username}
+
+    # odadakilere sistem mesajı
     emit("system_message", {"message": f"{username} odaya katıldı.", "room": room}, room=room)
 
+    # history sadece bu client'a
     db = SessionLocal()
     history = (
         db.query(Message)
@@ -124,21 +235,23 @@ def handle_join(data):
     history_data = [
         {
             "username": m.username,
-            "ciphertext": m.ciphertext,
+            "ciphertext": _wire_from_ciphertext(m.ciphertext),
             "algo": m.algorithm,
-            "timestamp": m.timestamp.isoformat() if m.timestamp else ""
+            "created_at": m.timestamp.isoformat() if m.timestamp else ""
         }
         for m in reversed(history)
     ]
-
     emit("history", history_data, to=request.sid)
+
+    # kullanıcı listesi herkese
+    _emit_room_users(room)
 
 
 @socketio.on("chat_message")
 def handle_chat_message(data):
-    msg = data["message"]
-    username = data["username"]
-    room = data["room"]
+    msg = data.get("message", "")
+    username = data.get("username", "")
+    room = data.get("room", "")
     algo = data.get("algo", "AES")
     key = data.get("key", "")
 
@@ -153,8 +266,11 @@ def handle_chat_message(data):
         else:
             ciphertext = cipher.encrypt(msg, key)
     except Exception as e:
-        emit("system_message", {"message": f"Şifreleme hatası: {str(e)}"}, room=room)
+        emit("system_message", {"message": f"Şifreleme hatası: {str(e)}", "room": room}, room=room)
         return
+
+    wire = _wire_from_ciphertext(ciphertext)
+    db_ciphertext = _db_string_from_ciphertext(ciphertext)
 
     try:
         db = SessionLocal()
@@ -163,7 +279,7 @@ def handle_chat_message(data):
             room=room,
             algorithm=algo,
             plaintext=msg,
-            ciphertext=ciphertext
+            ciphertext=db_ciphertext
         )
         db.add(msg_record)
         db.commit()
@@ -176,7 +292,7 @@ def handle_chat_message(data):
         {
             "username": username,
             "room": room,
-            "ciphertext": ciphertext,
+            "ciphertext": wire,
             "algo": algo
         },
         room=room
@@ -185,16 +301,18 @@ def handle_chat_message(data):
 
 @socketio.on("decrypt_message")
 def handle_decrypt_message(data):
-    cipher_text = data.get("ciphertext")
+    cipher_payload = data.get("ciphertext")
     algo = data.get("algo")
     key = data.get("key", "")
 
-    if not cipher_text:
-        emit("decrypt_result", {"success": False, "error": "Cipher boş."})
+    if not cipher_payload:
+        emit("decrypt_result", {"ok": False, "error": "Cipher boş."})
         return
 
     if algo == "AES" and (not key or key.strip() == "") and "username" in session:
         key = session_aes_keys.get(session["username"], "")
+
+    cipher_text = _ciphertext_from_wire(cipher_payload)
 
     try:
         cipher = get_cipher(algo)
@@ -204,10 +322,38 @@ def handle_decrypt_message(data):
         else:
             plaintext = cipher.decrypt(cipher_text, key)
     except Exception as e:
-        emit("decrypt_result", {"success": False, "error": f"Hata: {e}"})
+        emit("decrypt_result", {"ok": False, "error": f"{e}"})
         return
 
-    emit("decrypt_result", {"success": True, "plaintext": plaintext})
+    emit("decrypt_result", {"ok": True, "plaintext": plaintext})
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    error = None
+
+    if request.method == "POST":
+        username = (request.form.get("username", "")).strip()
+        password = (request.form.get("password", "")).strip()
+        password2 = (request.form.get("password2", "")).strip()
+
+        # basit validasyon
+        if not username or not password:
+            error = "Kullanıcı adı ve şifre zorunlu."
+        elif len(username) < 3:
+            error = "Kullanıcı adı en az 3 karakter olmalı."
+        elif len(password) < 4:
+            error = "Şifre en az 4 karakter olmalı."
+        elif password != password2:
+            error = "Şifreler uyuşmuyor."
+        elif username in USERS:
+            error = "Bu kullanıcı adı zaten alınmış."
+        else:
+            # USERS dict'e ekle (kalıcı değildir: restartta gider)
+            USERS[username] = {"password": password, "role": "user"}
+            return redirect(url_for("login"))
+
+    return render_template("register.html", error=error)
 
 
 if __name__ == "__main__":

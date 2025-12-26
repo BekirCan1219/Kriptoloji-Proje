@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Giriş | Kripto Chat</title>
+    <title>Kayıt Ol | Kripto Chat</title>
 
     <style>
         * { box-sizing: border-box; }
@@ -72,6 +72,12 @@
             margin-bottom: 10px;
         }
 
+        .ok-text {
+            font-size: 13px;
+            color: #34d399;
+            margin-bottom: 10px;
+        }
+
         label {
             display: block;
             font-size: 12px;
@@ -113,31 +119,6 @@
         button:hover { background: #2563eb; }
         button:active { transform: scale(0.97); }
 
-        .hint {
-            margin-top: 10px;
-            font-size: 11px;
-            color: #9ca3af;
-        }
-
-        .hint code {
-            background: rgba(15,23,42,0.8);
-            padding: 2px 4px;
-            border-radius: 4px;
-            font-size: 11px;
-        }
-
-        .badge-admin {
-            display: inline-block;
-            margin-left: 4px;
-            padding: 1px 6px;
-            border-radius: 999px;
-            background: rgba(248,250,252,0.08);
-            border: 1px solid rgba(251,191,36,0.7);
-            color: #facc15;
-            font-size: 10px;
-        }
-
-        /* YENİ: alt linkler */
         .links {
             margin-top: 12px;
             display: flex;
@@ -154,47 +135,66 @@
             background: rgba(15,23,42,0.35);
         }
         .links a:hover { background: rgba(15,23,42,0.55); }
+
+        .hint {
+            margin-top: 10px;
+            font-size: 11px;
+            color: #9ca3af;
+        }
+        .hint code {
+            background: rgba(15,23,42,0.8);
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
 <header>
     <div>
         <h1>🔐 Kripto Chat</h1>
-        <span>Önce giriş yap, sonra şifreli sohbet odasına geç</span>
+        <span>Yeni kullanıcı oluştur</span>
     </div>
 </header>
 
 <div class="page">
     <div class="card">
-        <h2>Giriş Yap</h2>
-        <p class="sub">Derse özel tanımlı kullanıcı adın ve şifren ile devam et.</p>
+        <h2>Kayıt Ol</h2>
+        <p class="sub">Yeni bir hesap oluştur. Rol otomatik olarak <b>user</b> olur.</p>
 
         {% if error %}
             <div class="error-text">{{ error }}</div>
+        {% endif %}
+        {% if success %}
+            <div class="ok-text">{{ success }}</div>
         {% endif %}
 
         <form method="post">
             <div>
                 <label for="username">Kullanıcı adı</label>
-                <input type="text" id="username" name="username" placeholder="örn: bekir" autocomplete="username" required>
+                <input type="text" id="username" name="username" placeholder="örn: bekir2" autocomplete="username" required>
             </div>
+
             <div>
                 <label for="password">Şifre</label>
-                <input type="password" id="password" name="password" placeholder="Şifren" autocomplete="current-password" required>
+                <input type="password" id="password" name="password" placeholder="Şifre" autocomplete="new-password" required>
             </div>
-            <button type="submit">Giriş</button>
+
+            <div>
+                <label for="password2">Şifre (tekrar)</label>
+                <input type="password" id="password2" name="password2" placeholder="Şifre (tekrar)" autocomplete="new-password" required>
+            </div>
+
+            <button type="submit">Kayıt Ol</button>
         </form>
 
-        <!-- YENİ: Kayıt linki -->
         <div class="links">
-            <a href="{{ url_for('register') }}">🧾 Kayıt Ol</a>
-            <a href="{{ url_for('login') }}">↻ Yenile</a>
+            <a href="{{ url_for('login') }}">← Giriş sayfasına dön</a>
+            <a href="{{ url_for('register') }}">↻ Yenile</a>
         </div>
 
         <div class="hint">
-            Örnek kullanıcılar:<br>
-            <code>admin / 1234</code> <span class="badge-admin">Admin</span><br>
-            <code>bekir / 12345</code> (Normal kullanıcı)
+            Not: Bu sayfa çalışması için backend’de <code>/register</code> route’u olmalı.
         </div>
     </div>
 </div>

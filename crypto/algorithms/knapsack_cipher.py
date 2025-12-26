@@ -1,5 +1,3 @@
-# crypto/algorithms/knapsack_cipher.py
-
 import base64
 import json
 import hashlib
@@ -7,12 +5,7 @@ from Crypto.Util import number
 
 
 def _derive_private_params(key: str):
-    """
-    Kullanıcı key'inden Merkle–Hellman özel anahtarını üret:
-    - w: süper artan dizi (uzunluk 8)
-    - q: sum(w)'den büyük mod
-    - r: q ile aralarında asal çarpan
-    """
+
     h = hashlib.sha256(key.encode("utf-8")).digest()
 
     w = []
@@ -49,11 +42,7 @@ class KnapsackCipher:
     name = "KNAPSACK"
 
     def encrypt(self, plaintext: str, key: str) -> str:
-        """
-        Merkle–Hellman Knapsack şifreleme.
-        Her byte (8 bit) için bir toplam değeri üretir.
-        Dönen değer: base64(JSON(list[int])) string
-        """
+
         if not plaintext:
             return ""
 
@@ -76,10 +65,7 @@ class KnapsackCipher:
         return base64.b64encode(json_bytes).decode("utf-8")
 
     def decrypt(self, ciphertext: str, key: str) -> str:
-        """
-        Knapsack çözme.
-        ciphertext: encrypt'ten dönen base64(JSON(list[int])) string
-        """
+
         if not ciphertext:
             return ""
 
